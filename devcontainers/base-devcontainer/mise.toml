@@ -6,3 +6,4 @@ acli = "latest"
 uv = "latest"
 "github:clawscli/claws" = "latest"
 aws-cli = { version = "latest", symlink_bins = "true" }
+github-cli = "latest"

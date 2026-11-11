@@ -28,6 +28,8 @@ A good result shows `✓ Authenticated` with the site, email and `Authentication
 
 ## Jira (read-only)
 
+**Default project: `CG`.** When the user asks about tickets without naming a project, or gives a bare number (e.g. "1342"), assume project `CG` and key prefix `CG-` (e.g. `CG-1342`). Scope searches with `project = CG` unless the user names another project or asks for all projects.
+
 ```bash
 # Search with JQL
 acli jira workitem search --jql "project = TEAM AND status != Done" --limit 50 --json
