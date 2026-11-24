@@ -17,6 +17,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
     }
+    tls = {
+      source = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 
@@ -347,11 +351,60 @@ resource "random_password" "customer1_db_password" {
   }
 }
 
-resource "aws_secretsmanager_secret_version" "customer1_db_user" {
+resource "aws_secretsmanager_secret_version" "customer1_db_creds" {
   secret_id = aws_secretsmanager_secret.mercury_vault.id
   secret_string = jsonencode({
     username = "app"
     password = random_password.customer1_db_password.result
+  })
+}
+# ---------------------------------------------------------------------------
+# Service Account setup
+# ---------------------------------------------------------------------------
+data "tls_certificate" "eks" {
+  url = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_role" "customer1_secrets" {
+  name = "customer1-secrets-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.eks.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:default:customer1-sa"
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "customer1_secrets" {
+  name = "customer1-secrets-access"
+  role = aws_iam_role.customer1_secrets.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue"]
+      Resource = [
+        aws_secretsmanager_secret.mercury_vault.arn
+      ]
+    }]
   })
 }
 # ---------------------------------------------------------------------------
